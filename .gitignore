@@ -1,0 +1,13 @@
+# Environment variables
+.env
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Alembic and migrations
+alembic.ini
+alembic/
+migrations/
+versions/

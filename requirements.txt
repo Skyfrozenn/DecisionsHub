@@ -5,3 +5,7 @@ pydantic[email]
 alembic
 asyncpg
 greenlet
+dotenv
+passlib "bcrypt==4.0.1"
+PyJWT
+python-multipart`1`

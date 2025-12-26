@@ -50,9 +50,9 @@ async def login(
         "role" : user.role,
         "id" : user.id
     }
-    acces_token = jwt_manager.create_acess_token(data)
+    access_token = jwt_manager.create_acess_token(data)
     refresh_token = jwt_manager.create_refresh_token(data)
-    return {"acces_token" : acces_token, "refresh_token" : refresh_token}
+    return {"access_token": access_token,"refresh_token" : refresh_token, "token_type": "bearer"}
 
 @router.post("/acces-token")
 async def update_acces_token(user : UserModel = Depends(jwt_manager.verify_refresh_token)):

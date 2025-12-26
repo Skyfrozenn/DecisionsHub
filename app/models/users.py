@@ -17,5 +17,7 @@ class UserModel(Base):
     role : Mapped[str] = mapped_column(String(15), default="admin")
     created_at : Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     is_active : Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    
+    decisions : Mapped[list["DecisionModel"]] = relationship(back_populates="user")
 
 

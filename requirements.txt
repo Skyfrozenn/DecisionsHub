@@ -8,4 +8,4 @@ greenlet
 dotenv
 passlib "bcrypt==4.0.1"
 PyJWT
-python-multipart`1`
+python-multipart

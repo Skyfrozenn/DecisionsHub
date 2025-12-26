@@ -15,7 +15,7 @@ import jwt
 
 from datetime import datetime, timedelta,timezone
  
-oath2_scheme = OAuth2PasswordBearer(tokenUrl="users/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="users/token")
 
 class JWTManager:
     def __init__(self, algorithm, secret_key, acces_token_expire_minutes, refresh_token_expire_days) :
@@ -47,7 +47,7 @@ class JWTManager:
         refresh_token = jwt.encode(to_encody, self.__secret_key, algorithm = self.algorithm)
         return refresh_token
     
-    async def get_current_user(self, token : str = Depends(oath2_scheme), db : AsyncSession = Depends(get_async_db)):
+    async def get_current_user(self, token : str = Depends(oauth2_scheme), db : AsyncSession = Depends(get_async_db)):
         """
         Функция охранник проверяет акссес токен
         """

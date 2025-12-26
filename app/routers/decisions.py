@@ -56,13 +56,13 @@ async def add_decision(
     db : AsyncSession = Depends(get_async_db),
     current_user : UserModel = Depends(jwt_manager.get_current_user),
 ):
-    if image:
-        image_url = await save_image(image)
     new_decision = DecisionModel(
         **decision.model_dump(),
-        user_id = current_user.id,
-        image_url = image_url
+        user_id = current_user.id,        
     )
+    if image:
+        image_url = await save_image(image)
+        new_decision.image_url = image_url
     db.add(new_decision)
     await db.commit()
     await db.refresh(new_decision)
@@ -194,6 +194,7 @@ async def in_active_decision(
     if current_user.role != "admin":
         if decision.user_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Удалять чужие данные может только админ")
+    remove_image(decision.image_url)
     await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(is_active = False))
     await db.commit()
     return {"status": "success", "message": "Decision marked as inactive"}

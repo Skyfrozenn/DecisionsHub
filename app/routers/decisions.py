@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, status, HTTPException,UploadFile, File, Query
 
-from sqlalchemy import select, or_,  func
+from sqlalchemy import select, or_,  func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.decisions import DecisionCreateSchema, DecisitionSchema, DecisionSearchSchema
@@ -41,7 +41,7 @@ def remove_image(url : str):
     if not url:
         return
     relative_path = url.lstrip("/")
-    file_path = MEDIA_ROOT / relative_path
+    file_path = BASE_DIR / relative_path
     if file_path.exists():
         file_path.unlink()
 
@@ -139,3 +139,61 @@ async def search_decisions(
                     total_size=len(items)
                 )
 
+
+
+@router.put("/", response_model=DecisitionSchema)
+async def update_decision(
+    decision_id : int,
+    new_decision : DecisionCreateSchema = Depends(DecisionCreateSchema.as_form),
+    image : UploadFile | None = File(None),
+    db : AsyncSession = Depends(get_async_db),
+    current_user : UserModel = Depends(jwt_manager.get_current_user)
+) -> DecisitionSchema:
+    request_decision = await db.scalars(
+        select(DecisionModel)
+        .where(DecisionModel.id == decision_id, DecisionModel.is_active == True)
+    )
+    decision = request_decision.first()
+    if decision is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена или не активна")
+    if decision.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Доступ запрещен")
+    if image:
+        remove_image(decision.image_url)
+        decision.image_url = await save_image(image)
+    await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(**new_decision.model_dump()))
+    await db.commit()
+    await db.refresh(decision)
+    return decision
+    
+
+
+@router.get("/{decision_id}", response_model=DecisitionSchema)
+async def get_decision_info(
+    decision_id : int,
+    db : AsyncSession = Depends(get_async_db)
+) -> DecisitionSchema:
+    decision = await db.scalar(select(DecisionModel).where(DecisionModel.id == decision_id, DecisionModel.is_active == True))
+    if decision is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена или не активна")
+    return decision
+
+
+@router.delete("/{decision_id}", status_code=status.HTTP_200_OK)
+async def in_active_decision(
+    decision_id : int,
+    db : AsyncSession = Depends(get_async_db),
+    current_user : UserModel = Depends(jwt_manager.get_current_user)
+):
+    decision = await db.scalar(
+        select(DecisionModel)
+        .where(DecisionModel.id == decision_id, DecisionModel.is_active == True)
+    )
+    if decision is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена или не активна")
+    if current_user.role != "admin":
+        if decision.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Удалять чужие данные может только админ")
+    await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(is_active = False))
+    await db.commit()
+    return {"status": "success", "message": "Decision marked as inactive"}

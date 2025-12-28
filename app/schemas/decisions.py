@@ -30,6 +30,8 @@ class DecisitionSchema(BaseModel):
     updated_at : datetime
     status : str
     is_active : bool
+    like : int = Field(default=0, ge=0, description="Количество лайков")
+    dislike : int = Field(default=0,ge=0,  description="Количество дизлайков")
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -40,6 +42,7 @@ class DecisionSearchSchema(BaseModel):
     page_size : int  = Field(ge=1, description="Количество решений")
     items : list[DecisitionSchema] = Field(default_factory=list, description="Список решений")
     total_size : int = Field(ge=0)
+    
 
     model_config = ConfigDict(from_attributes=True)
  

@@ -6,9 +6,10 @@ from sqlalchemy import select, or_,  func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.decisions import DecisionCreateSchema, DecisitionSchema, DecisionSearchSchema
-from app.models import DecisionModel, UserModel
+from app.models import DecisionModel, UserModel, DecisionVoteModel
 from app.config import jwt_manager
 from app.db_depends import get_async_db
+from app.utilits import like, dislike
 
 from pathlib import Path
 
@@ -70,74 +71,107 @@ async def add_decision(
     
 
 
+
+
+
 @router.get("/", response_model=DecisionSearchSchema)
 async def search_decisions(
-    page : int =  Query(1, ge=1),
-    page_size : int  = Query(10, ge=1),
-    search : str | None = Query(None),
-    status : str | None = Query(None, pattern=r"^(in_processing|ready)$",description="Cтутус [in_processing|ready]"),
-    db : AsyncSession = Depends(get_async_db)    
-)-> DecisionSearchSchema:
-    filters = [DecisionModel.is_active == True]
-    if status is not None:
+    page: int = Query(1, ge=1),
+    search: str | None = Query(None),
+    status: str | None = Query(
+        None,
+        pattern=r"^(in_processing|ready)$",
+        description="Статус [in_processing|ready]"
+    ),
+    db: AsyncSession = Depends(get_async_db),
+) -> DecisionSearchSchema:
+    
+    PAGE_SIZE = 20
+
+    filters = [DecisionModel.is_active.is_(True)]
+
+    if status:
         filters.append(DecisionModel.status == status)
+
+    rank = None
+
     if search:
-        search_value = search.strip(" ")
+        search_value = search.strip()
         if search_value:
             ts_query_ru = func.websearch_to_tsquery("russian", search_value)
             ts_query_en = func.websearch_to_tsquery("english", search_value)
-            fst_search = (
-                 or_(
-                     DecisionModel.tsv.op('@@')(ts_query_ru),
-                     DecisionModel.tsv.op('@@')(ts_query_en)
-                 )
-            )
-            trigram_search = or_(
-                DecisionModel.title.op('%')(search_value),
-                func.similarity(DecisionModel.title, search_value) > 0.15
-            )
-            filters.append(
-                or_(
-                    fst_search, trigram_search
-                )
-            )
-            rank = func.greatest(
-            func.ts_rank_cd(DecisionModel.tsv, ts_query_ru),
-            func.ts_rank_cd(DecisionModel.tsv, ts_query_en),
-            func.similarity(DecisionModel.title, search_value) * 0.5
+
+            fst_search = or_(
+                DecisionModel.tsv.op("@@")(ts_query_ru),
+                DecisionModel.tsv.op("@@")(ts_query_en),
             )
 
-        
-            decision_request = await db.scalars(
-                select(DecisionModel)
-                .where(*filters)
-                .offset((page - 1) * page_size)
-                .limit(page_size)
-                .order_by(rank.desc())
+            trigram_search = or_(
+                DecisionModel.title.op("%")(search_value),
+                func.similarity(DecisionModel.title, search_value) > 0.15,
             )
-            items = decision_request.all()
-            return DecisionSearchSchema(
-                page=page,
-                page_size=page_size,
-                items=items,
-                total_size=len(items)
+
+            filters.append(or_(fst_search, trigram_search))
+
+            rank = func.greatest(
+                func.ts_rank_cd(DecisionModel.tsv, ts_query_ru),
+                func.ts_rank_cd(DecisionModel.tsv, ts_query_en),
+                func.similarity(DecisionModel.title, search_value) * 0.5,
             )
-            
-    else :
-        request_decision = await db.scalars(
-            select(DecisionModel)
-            .where(*filters)
-            .offset((page-1) * page_size)
-            .limit(page_size)
-            .order_by(DecisionModel.created_at.desc())
+
+    stmt = (
+        select(
+            DecisionModel,
+
+            func.count(DecisionVoteModel.user_id)
+            .filter(DecisionVoteModel.is_like.is_(True))
+            .label("like"),
+
+            func.count(DecisionVoteModel.user_id)
+            .filter(DecisionVoteModel.is_like.is_(False))
+            .label("dislike"),
         )
-        items = request_decision.all()
-        return DecisionSearchSchema(
-                    page=page,
-                    page_size=page_size,
-                    items=items,
-                    total_size=len(items)
-                )
+        .outerjoin(DecisionModel.votes)
+        .where(*filters)
+        .group_by(DecisionModel.id)
+        .limit(PAGE_SIZE)
+        .offset((page - 1) * PAGE_SIZE)
+    )
+
+    if rank is not None:
+        stmt = stmt.order_by(rank.desc())
+    else:
+        stmt = stmt.order_by(DecisionModel.created_at.desc())
+
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    items = [
+        DecisitionSchema(
+            id=decision.id,
+            title=decision.title,
+            description=decision.description,
+            image_url=decision.image_url,
+            user_id=decision.user_id,
+            created_at=decision.created_at,
+            updated_at=decision.updated_at,
+            status=decision.status,
+            is_active=decision.is_active,
+            like=like,
+            dislike=dislike,
+        )
+        for decision, like, dislike in rows
+    ]
+
+    return DecisionSearchSchema(
+        page=page,
+        page_size=PAGE_SIZE,
+        total_size=len(items),
+        items=items,
+    )
+
+
+
 
 
 
@@ -170,13 +204,54 @@ async def update_decision(
 
 @router.get("/{decision_id}", response_model=DecisitionSchema)
 async def get_decision_info(
-    decision_id : int,
-    db : AsyncSession = Depends(get_async_db)
+    decision_id: int,
+    db: AsyncSession = Depends(get_async_db),
 ) -> DecisitionSchema:
-    decision = await db.scalar(select(DecisionModel).where(DecisionModel.id == decision_id, DecisionModel.is_active == True))
-    if decision is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена или не активна")
-    return decision
+
+    stmt = (
+        select(
+            DecisionModel,
+
+            func.count(DecisionVoteModel.user_id)
+            .filter(DecisionVoteModel.is_like.is_(True))
+            .label("like"),
+
+            func.count(DecisionVoteModel.user_id)
+            .filter(DecisionVoteModel.is_like.is_(False))
+            .label("dislike"),
+        )
+        .outerjoin(DecisionModel.votes)  
+        .where(
+            DecisionModel.id == decision_id,
+            DecisionModel.is_active.is_(True),
+        )
+        .group_by(DecisionModel.id)
+    )
+
+    result = await db.execute(stmt)
+    row = result.first()
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запись не найдена или не активна",
+        )
+
+    decision, like, dislike = row
+
+    return DecisitionSchema(
+        id=decision.id,
+        title=decision.title,
+        description=decision.description,
+        image_url=decision.image_url,
+        user_id=decision.user_id,
+        created_at=decision.created_at,
+        updated_at=decision.updated_at,
+        status=decision.status,
+        is_active=decision.is_active,
+        like=like,
+        dislike=dislike,
+    )
 
 
 @router.delete("/{decision_id}", status_code=status.HTTP_200_OK)
@@ -198,3 +273,56 @@ async def in_active_decision(
     await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(is_active = False))
     await db.commit()
     return {"status": "success", "message": "Decision marked as inactive"}
+
+
+
+
+@router.post("/like/{decision_id}")
+async def like_decision(
+    decision_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(jwt_manager.get_current_user)
+):
+    decision = await db.scalar(
+        select(DecisionModel).where(
+            DecisionModel.id == decision_id,
+            DecisionModel.is_active == True
+        )
+    )
+    
+    if not decision:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запись не найдена"
+        )
+    
+    result = await like(current_user.id, decision_id, db)
+    return {"status": "success", "is_like" : result}
+
+
+@router.post("/dislike/{decision_id}")
+async def dislike_decision(
+    decision_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(jwt_manager.get_current_user)
+):
+    decision = await db.scalar(
+        select(DecisionModel).where(
+            DecisionModel.id == decision_id,
+            DecisionModel.is_active == True
+        )
+    )
+    
+    if not decision:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Запись не найдена"
+        )
+    
+    result = await dislike(current_user.id, decision_id, db)
+    return {"status": "success", "is_like" : result}
+
+
+    
+    
+     

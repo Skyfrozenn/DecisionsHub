@@ -4,6 +4,8 @@ from fastapi import Form
 from typing import Optional, Annotated
 from datetime import datetime
 
+from app.schemas.decision_history import DecisionHistorySchema
+
 
 
 
@@ -49,5 +51,9 @@ class DecisionSearchSchema(BaseModel):
 
 class DecisionUpdateSchema(DecisionCreateSchema):
     pass
+
+class DecisionDetailSchema(DecisitionSchema):
+    decision_history : list[DecisionHistorySchema] = Field(default_factory=list, description="История обновления решения")
+
 
     

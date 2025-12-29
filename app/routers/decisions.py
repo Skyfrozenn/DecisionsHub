@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, status, HTTPException,UploadFile, File, Query
 
 from sqlalchemy import select, or_,  func, update
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.decisions import DecisionCreateSchema, DecisitionSchema, DecisionSearchSchema, DecisionUpdateSchema
@@ -78,6 +79,7 @@ async def search_decisions(
         description="Статус [in_processing|ready]"
     ),
     db: AsyncSession = Depends(get_async_db),
+    current_user : UserModel = Depends(jwt_manager.get_current_user)
 ) -> DecisionSearchSchema:
     
     PAGE_SIZE = 20
@@ -202,6 +204,7 @@ async def update_decision(
 async def get_decision_info(
     decision_id: int,
     db: AsyncSession = Depends(get_async_db),
+    current_user : UserModel = Depends(jwt_manager.get_current_user)
 ) -> DecisitionSchema:
 
     stmt = (
@@ -259,12 +262,15 @@ async def in_active_decision(
     decision = await db.scalar(
         select(DecisionModel)
         .where(DecisionModel.id == decision_id, DecisionModel.is_active == True)
+        .options(selectinload(DecisionModel.decision_history))
     )
     if decision is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена или не активна")
     if current_user.role != "admin":
         if decision.user_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Удалять чужие данные может только админ")
+        
+    await db.execute(update(DecisionHistoryModel).where(DecisionHistoryModel.decision_id == decision.id).values(is_active = False))
     await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(is_active = False))
     await db.commit()
     return {"status": "success", "message": "Decision marked as inactive"}
@@ -320,7 +326,7 @@ async def dislike_decision(
 
     
     
-@router.post("/decisions/{decision_id}/accept")
+@router.post("/{decision_id}/accept")
 async def accept_decision(
     decision_id: int,
     db: AsyncSession = Depends(get_async_db),

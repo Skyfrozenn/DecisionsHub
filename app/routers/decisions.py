@@ -5,11 +5,12 @@ from fastapi import APIRouter, Depends, status, HTTPException,UploadFile, File, 
 from sqlalchemy import select, or_,  func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.decisions import DecisionCreateSchema, DecisitionSchema, DecisionSearchSchema
+from app.schemas.decisions import DecisionCreateSchema, DecisitionSchema, DecisionSearchSchema, DecisionUpdateSchema
 from app.models import DecisionModel, UserModel, DecisionVoteModel
 from app.config import jwt_manager
 from app.db_depends import get_async_db
-from app.utilits import like, dislike
+from app.utilits import like, dislike, decision_making
+from app.validation.depends_role import get_admin_user
 
 from pathlib import Path
 
@@ -175,10 +176,10 @@ async def search_decisions(
 
 
 
-@router.put("/", response_model=DecisitionSchema)
+@router.put("/{decision_id}", response_model=DecisitionSchema)
 async def update_decision(
     decision_id : int,
-    new_decision : DecisionCreateSchema = Depends(DecisionCreateSchema.as_form),
+    new_decision : DecisionCreateSchema = Depends(DecisionUpdateSchema.as_form),
     image : UploadFile | None = File(None),
     db : AsyncSession = Depends(get_async_db),
     current_user : UserModel = Depends(jwt_manager.get_current_user)
@@ -195,9 +196,12 @@ async def update_decision(
     if image:
         remove_image(decision.image_url)
         decision.image_url = await save_image(image)
+     
     await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(**new_decision.model_dump()))
     await db.commit()
     await db.refresh(decision)
+    if decision.status == "ready":
+        await decision_making(db=db, decision_id=decision.id)
     return decision
     
 
@@ -325,4 +329,11 @@ async def dislike_decision(
 
     
     
-     
+@router.post("/decisions/{decision_id}/accept")
+async def accept_decision(
+    decision_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(get_admin_user)
+):
+    await decision_making(decision_id, db)
+    return {"status": "success","message" : "the decision has been made"}

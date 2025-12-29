@@ -15,7 +15,7 @@ class DecisionModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
-    title: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    title: Mapped[str] = mapped_column(String(100),  nullable=False)
     description: Mapped[Optional[str]] = mapped_column(TEXT, nullable=True)
     image_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
@@ -69,8 +69,11 @@ class DecisionModel(Base):
     votes: Mapped[list["DecisionVoteModel"]] = relationship(
         back_populates="decision",
         cascade="all, delete-orphan",
-        passive_deletes=True
     )
 
+    decision_history : Mapped[list["DecisionHistoryModel"]] = relationship(
+        back_populates="decision",
+        cascade="all, delete-orphan",
+    )
     
      

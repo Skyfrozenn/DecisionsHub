@@ -47,5 +47,7 @@ class DecisionSearchSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
  
 
+class DecisionUpdateSchema(DecisionCreateSchema):
+    pass
 
     

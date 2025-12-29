@@ -6,7 +6,7 @@ from sqlalchemy import select, or_,  func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.decisions import DecisionCreateSchema, DecisitionSchema, DecisionSearchSchema, DecisionUpdateSchema
-from app.models import DecisionModel, UserModel, DecisionVoteModel
+from app.models import DecisionModel, UserModel, DecisionVoteModel, DecisionHistoryModel
 from app.config import jwt_manager
 from app.db_depends import get_async_db
 from app.utilits import like, dislike, decision_making
@@ -39,13 +39,6 @@ async def save_image(file : UploadFile):
     return f"/media/decisions/{filename}"
 
 
-def remove_image(url : str):
-    if not url:
-        return
-    relative_path = url.lstrip("/")
-    file_path = BASE_DIR / relative_path
-    if file_path.exists():
-        file_path.unlink()
 
 
 
@@ -194,7 +187,6 @@ async def update_decision(
     if decision.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Доступ запрещен")
     if image:
-        remove_image(decision.image_url)
         decision.image_url = await save_image(image)
      
     await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(**new_decision.model_dump()))
@@ -273,7 +265,6 @@ async def in_active_decision(
     if current_user.role != "admin":
         if decision.user_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Удалять чужие данные может только админ")
-    remove_image(decision.image_url)
     await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(is_active = False))
     await db.commit()
     return {"status": "success", "message": "Decision marked as inactive"}
@@ -337,3 +328,37 @@ async def accept_decision(
 ):
     await decision_making(decision_id, db)
     return {"status": "success","message" : "the decision has been made"}
+
+
+@router.put("/{decision_id}/rolback/{decision_history_id}", response_model=DecisitionSchema)
+async def rolback_decision(
+    decision_id : int,
+    decision_history_id : int,
+    db : AsyncSession = Depends(get_async_db),
+    current_user : UserModel = Depends(jwt_manager.get_current_user)
+):
+    decision = await db.scalar(
+        select(DecisionModel)
+        .where(DecisionModel.id == decision_id, DecisionModel.is_active == True)
+    )
+    decision_hisory = await db.scalar(
+        select(DecisionHistoryModel)
+        .where(DecisionHistoryModel.id == decision_history_id, DecisionHistoryModel.is_active == True)
+    )
+    if decision is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Решение не найдено")
+    if decision_hisory is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="История обновления не найдено")
+    if current_user.role != "admin":
+        if decision.user_id != current_user.id:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Доступ запрещен! только админ или создатель решения может его изменять")
+
+
+
+    decision.title = decision_hisory.title
+    decision.description = decision_hisory.description
+    decision.image_url = decision_hisory.image_url
+
+    await db.commit()
+    await db.refresh(decision)
+    return decision

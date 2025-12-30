@@ -25,10 +25,10 @@ class DecisionModel(Base):
     )
 
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now()
+        DateTime(timezone=True), server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
     status: Mapped[str] = mapped_column(
@@ -74,6 +74,11 @@ class DecisionModel(Base):
     decision_history : Mapped[list["DecisionHistoryModel"]] = relationship(
         back_populates="decision",
         cascade="all, delete-orphan",
+    )
+    comments : Mapped[list["CommentModel"]] = relationship(
+        back_populates="decision",
+        cascade="all, delete-orphan"
+
     )
     
      

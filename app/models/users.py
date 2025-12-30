@@ -27,15 +27,23 @@ class UserModel(Base):
     # relationships
     decisions: Mapped[list["DecisionModel"]] = relationship(
         back_populates="user",
-        cascade="all, delete-orphan",
-        passive_deletes=True
+        cascade="all, delete-orphan"     
     )
 
     votes: Mapped[list["DecisionVoteModel"]] = relationship(
         back_populates="user",
-        cascade="all, delete-orphan",
-        passive_deletes=True
+        cascade="all, delete-orphan"     
     )
+    comments : Mapped[list["CommentModel"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+    comment_votes : Mapped[list["CommentVoteModel"]] =  relationship(
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
+
 
 
 

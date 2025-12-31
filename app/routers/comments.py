@@ -47,7 +47,7 @@ async def create_comment(
     return comment
     
 
-@router.get("/decisions/{decision_id}/comments", response_model=list[CommentSchema])
+@router.get("/decision/{decision_id}", response_model=list[CommentSchema])
 async def comment_decision(decision_id: int, last_id : int | None = None, db: AsyncSession = Depends(get_async_db)):
 
     filters = [CommentModel.decision_id == decision_id, CommentModel.status == True]

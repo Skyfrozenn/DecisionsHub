@@ -60,22 +60,22 @@ class JWTManager:
             payload = jwt.decode(token, self.__secret_key, algorithms=[self.algorithm])   
             email : str | None = payload.get("sub")
             token_types : str | None = payload.get("token_types")
-            if email is None or token_types != "access" : #если емейла нет то неверные данные пошел нахуй
+            if email is None or token_types != "access" : #если емейла нет то неверные данные 
                 raise credentals_exception
-        except jwt.ExpiredSignatureError: #проверка не истекло ли время если да нахуй пошел
+        except jwt.ExpiredSignatureError: #проверка не истекло ли время 
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Время токена истекло!",
                 headers={"WWW-Authenticate" : "Bearer"}
             )
-        except jwt.PyJWTError: #проверка подписи хуедписи всякой хуйни всего джвт 
+        except jwt.PyJWTError: #проверка подписи  
             raise credentals_exception
         request_user = await db.scalars(
             select(UserModel)
             .where(UserModel.email == email, UserModel.is_active == True)
         )
         user = request_user.first() 
-        if user is None: #если юзера нет в бд то тоже идет нахуй
+        if user is None: #если юзера нет в бд  
             raise credentals_exception
         return user
     

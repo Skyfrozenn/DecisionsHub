@@ -86,7 +86,7 @@ async def liked_comment(
     db : AsyncSession = Depends(get_async_db),
     current_user : UserModel = Depends(jwt_manager.get_current_user)
 ):
-    result = await like_comment(db=db, user_id=current_user.id, comment_id=comment_id)
+    result = await like_comment(user_id=current_user.id, comment_id=comment_id, db=db)
     return result
 
 
@@ -98,7 +98,7 @@ async def disliked_comment(
     db : AsyncSession = Depends(get_async_db),
     current_user : UserModel = Depends(jwt_manager.get_current_user)
 ):
-    result = await dislike_comment(db=db, user_id=current_user.id, comment_id=comment_id)
+    result = await dislike_comment(user_id=current_user.id, comment_id=comment_id, db=db)
     return result
 
 

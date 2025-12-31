@@ -45,6 +45,12 @@ async def login(
             detail="Пользователя не существует или не активен",
             headers={"WWW-Authenticate" : "Bearer"}
         )
+    if not verify_password(form.password, user.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный пароль",
+            headers={"WWW-Authenticate" : "Bearer"}
+        )
     data = {
         "sub" : user.email,
         "role" : user.role,

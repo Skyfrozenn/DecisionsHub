@@ -22,7 +22,7 @@ class DecisionCreateSchema(BaseModel):
     ):
         return cls(title=title, description=description)
         
-class DecisitionSchema(BaseModel):
+class DecisionSchema(BaseModel):
     id : PositiveInt
     title : str
     description : Optional[str]
@@ -42,7 +42,7 @@ class DecisitionSchema(BaseModel):
 class DecisionSearchSchema(BaseModel):
     page : int  = Field(ge=1, description="Страница записи, больше или равно одному")
     page_size : int  = Field(ge=1, description="Количество решений")
-    items : list[DecisitionSchema] = Field(default_factory=list, description="Список решений")
+    items : list[DecisionSchema] = Field(default_factory=list, description="Список решений")
     total_size : int = Field(ge=0)
     
 
@@ -52,7 +52,7 @@ class DecisionSearchSchema(BaseModel):
 class DecisionUpdateSchema(DecisionCreateSchema):
     pass
 
-class DecisionDetailSchema(DecisitionSchema):
+class DecisionDetailSchema(DecisionSchema):
     decision_history : list[DecisionHistorySchema] = Field(default_factory=list, description="История обновления решения")
 
 

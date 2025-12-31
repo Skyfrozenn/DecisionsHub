@@ -126,7 +126,7 @@ async def decision_making(decision_id, db : AsyncSession):
     return True
 
 
-async def like_comment(db : AsyncSession, user_id, comment_id):
+async def like_comment(user_id, comment_id, db : AsyncSession):
     comment_vote = await db.scalar(
         select(CommentVoteModel)
         .where(CommentVoteModel.comment_id == comment_id, CommentVoteModel.user_id == user_id)
@@ -150,7 +150,7 @@ async def like_comment(db : AsyncSession, user_id, comment_id):
     return {"status" : "ok"}
    
         
-async def dislike_comment(db : AsyncSession, user_id, comment_id):
+async def dislike_comment(user_id, comment_id, db : AsyncSession):
     comment_vote = await db.scalar(
         select(CommentVoteModel)
         .where(CommentVoteModel.comment_id == comment_id, CommentVoteModel.user_id == user_id)

@@ -50,7 +50,7 @@ async def get_decision(
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Запись не найдена или не активна",
+            detail="Запись не найдена или не активна,возможно отсутствуют истории обновлений у записи",
         )
 
     decision, like, dislike = row

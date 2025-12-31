@@ -6,7 +6,7 @@ from sqlalchemy import select, or_,  func, update
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.decisions import DecisionCreateSchema, DecisitionSchema, DecisionSearchSchema, DecisionUpdateSchema
+from app.schemas.decisions import DecisionCreateSchema, DecisionSchema, DecisionSearchSchema, DecisionUpdateSchema
 from app.models import DecisionModel, UserModel, DecisionVoteModel, DecisionHistoryModel
 from app.config import jwt_manager
 from app.db_depends import get_async_db
@@ -45,7 +45,7 @@ async def save_image(file : UploadFile):
 
 
 
-@router.post("/",response_model=DecisitionSchema, status_code=status.HTTP_201_CREATED)
+@router.post("/",response_model=DecisionSchema, status_code=status.HTTP_201_CREATED)
 async def add_decision(
     decision : DecisionCreateSchema = Depends(DecisionCreateSchema.as_form),
     image : UploadFile | None = File(None),
@@ -143,7 +143,7 @@ async def search_decisions(
     rows = result.all()
 
     items = [
-        DecisitionSchema(
+        DecisionSchema(
             id=decision.id,
             title=decision.title,
             description=decision.description,
@@ -171,14 +171,14 @@ async def search_decisions(
 
 
 
-@router.put("/{decision_id}", response_model=DecisitionSchema)
+@router.put("/{decision_id}", response_model=DecisionSchema)
 async def update_decision(
     decision_id : int,
     new_decision : DecisionCreateSchema = Depends(DecisionUpdateSchema.as_form),
     image : UploadFile | None = File(None),
     db : AsyncSession = Depends(get_async_db),
     current_user : UserModel = Depends(jwt_manager.get_current_user)
-) -> DecisitionSchema:
+) -> DecisionSchema:
     request_decision = await db.scalars(
         select(DecisionModel)
         .where(DecisionModel.id == decision_id, DecisionModel.is_active == True)
@@ -200,12 +200,12 @@ async def update_decision(
     
 
 
-@router.get("/{decision_id}", response_model=DecisitionSchema)
+@router.get("/{decision_id}", response_model=DecisionSchema)
 async def get_decision_info(
     decision_id: int,
     db: AsyncSession = Depends(get_async_db),
     current_user : UserModel = Depends(jwt_manager.get_current_user)
-) -> DecisitionSchema:
+) -> DecisionSchema:
 
     stmt = (
         select(
@@ -238,7 +238,7 @@ async def get_decision_info(
 
     decision, like, dislike = row
 
-    return DecisitionSchema(
+    return DecisionSchema(
         id=decision.id,
         title=decision.title,
         description=decision.description,
@@ -336,7 +336,7 @@ async def accept_decision(
     return {"status": "success","message" : "the decision has been made"}
 
 
-@router.put("/{decision_id}/rolback/{decision_history_id}", response_model=DecisitionSchema)
+@router.put("/{decision_id}/rolback/{decision_history_id}", response_model=DecisionSchema)
 async def rolback_decision(
     decision_id : int,
     decision_history_id : int,

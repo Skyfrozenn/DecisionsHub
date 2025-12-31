@@ -16,7 +16,7 @@ router = APIRouter(
     tags=["DECISIONS-HISTORY"]
 )
 
-@router.get("/{decision_id}", response_model=DecisionDetailSchema)
+@router.get("/{decision_id}/decision", response_model=DecisionDetailSchema)
 async def get_decision(
     decision_id: int,
     db: AsyncSession = Depends(get_async_db),

@@ -23,7 +23,7 @@ async def create_comment(
     db : AsyncSession = Depends(get_async_db),
     current_user : UserModel = Depends(jwt_manager.get_current_user)
 ) -> CommentSchema:
-    decision = await db.get(DecisionModel, new_comment.dicision_id)
+    decision = await db.get(DecisionModel, new_comment.decision_id)
     if decision is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Решение не найдено или не активно")
     if new_comment.parent_id is not None:

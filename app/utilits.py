@@ -1,6 +1,6 @@
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import DecisionModel, DecisionVoteModel, UserModel, DecisionHistoryModel
+from app.models import DecisionModel, DecisionVoteModel, UserModel, DecisionHistoryModel, CommentModel, CommentVoteModel
 from fastapi import HTTPException, status
 
 
@@ -124,7 +124,52 @@ async def decision_making(decision_id, db : AsyncSession):
     await db.commit()  
     
     return True
-    
+
+
+async def like_comment(db : AsyncSession, user_id, comment_id):
+    comment_vote = await db.scalar(
+        select(CommentVoteModel)
+        .where(CommentVoteModel.comment_id == comment_id, CommentVoteModel.user_id == user_id)
+    )
+    if comment_vote:
+        if comment_vote.is_like:
+            await db.delete(comment_vote)
+             
+
+        else:
+            comment_vote.is_like = True
+    else:
+        like_comment = CommentVoteModel(
+            user_id = user_id,
+            comment_id = comment_id,
+            is_like = True
+        )
+        db.add(like_comment)
+
+    await db.commit()
+    return {"status" : "ok"}
+   
+        
+async def dislike_comment(db : AsyncSession, user_id, comment_id):
+    comment_vote = await db.scalar(
+        select(CommentVoteModel)
+        .where(CommentVoteModel.comment_id == comment_id, CommentVoteModel.user_id == user_id)
+    )
+    if comment_vote:
+        if comment_vote.is_like == False:
+            await db.delete(comment_vote)
+        else:
+            comment_vote.is_like = False
+    else:
+        dislike_comment = CommentVoteModel(
+            user_id = user_id,
+            comment_id = comment_id,
+            is_like = False
+        )
+        db.add(dislike_comment)
+
+    await db.commit()
+    return {"status" : "ok"} 
     
        
 

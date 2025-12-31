@@ -10,9 +10,7 @@ from typing import Optional
 class CommentModel(Base):
     __tablename__ = "comments"
 
-    __table_args__ = (
-        UniqueConstraint("user_id", "decision_id", name="uq_user_decision_comment"),
-    )
+  
     id : Mapped[int] = mapped_column(Integer, primary_key=True)
     text : Mapped[str] = mapped_column(TEXT,nullable=False)
     decision_id : Mapped[int] = mapped_column(Integer, ForeignKey("decisions.id",ondelete="CASCADE"), nullable=False)

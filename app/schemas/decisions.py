@@ -10,7 +10,7 @@ from app.schemas.decision_history import DecisionHistorySchema
 
 
 class DecisionCreateSchema(BaseModel):
-    title : str = Field(..., min_length=4, max_length=20, description="Название решения от 4-20 символов")
+    title : str = Field(..., min_length=4, max_length=100, description="Название решения от 4-20 символов")
     description : Optional[str] = Field(None, description="Описание решения от 4-20 символов")
     
     

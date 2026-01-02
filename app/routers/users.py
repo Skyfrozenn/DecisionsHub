@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 
-from sqlalchemy import select
+from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload, outerjoin
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.schemas.users import UserCreateSchema, UserSchema
-from app.models import UserModel
+from app.schemas.users import UserCreateSchema, UserSchema, UserDetailSchema
+from app.models import UserModel, DecisionModel
 from app.db_depends import get_async_db
 from app.validation.hash_password import hash_password,verify_password
 from app.config import jwt_manager
@@ -68,3 +69,46 @@ async def update_acces_token(user : UserModel = Depends(jwt_manager.verify_refre
 async def update_refresh_token(user : UserModel = Depends(jwt_manager.verify_refresh_token)):
     return await jwt_manager.new_refresh_token(user)
      
+
+
+@router.get("/", response_model=list[UserDetailSchema])
+async def get_users(
+    db : AsyncSession = Depends(get_async_db),
+    last_id : int | None = None,
+    current_user : UserModel = Depends(jwt_manager.get_current_user)
+) -> list[UserDetailSchema]:
+    filters = [UserModel.is_active == True]
+    if last_id is not None:
+        filters.append(UserModel.id > last_id)
+    request_user = await db.execute(
+        select(
+            UserModel,
+            func.count(DecisionModel.id).filter(DecisionModel.is_active.is_(True), DecisionModel.status == "ready").label("decisions_taken"),
+            func.count(DecisionModel.id).filter(DecisionModel.is_active.is_(True), DecisionModel.status == "in_processing").label("unaccepted_decisions")
+ 
+        )
+        .where(*filters)
+        .outerjoin(UserModel.decisions)
+        .group_by(UserModel.id)
+        .order_by(UserModel.created_at.desc())
+        .limit(30)
+    )
+    results = request_user.all()
+    return [
+        UserDetailSchema(
+            id = user.id,
+            name=user.name,
+            email=user.email,
+            role=user.role,
+            created_at=user.created_at,
+            is_active = user.is_active,
+            decisions_taken = decisions_taken,
+            unaccepted_decisions = unaccepted_decisions
+        )
+         
+        for user,decisions_taken,unaccepted_decisions in results
+    ]
+
+
+
+  

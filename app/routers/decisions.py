@@ -368,3 +368,114 @@ async def rolback_decision(
     await db.commit()
     await db.refresh(decision)
     return decision
+
+
+@router.get("/ready/{user_id}/user", response_model=list[DecisionSchema])
+async def get_user_decisions(
+    user_id : int,
+    last_id : int | None = None,
+    db : AsyncSession = Depends(get_async_db),
+    current_user : UserModel = Depends(jwt_manager.get_current_user)
+)-> list[DecisionSchema]:
+    user = await db.scalar(select(UserModel).where(
+        UserModel.is_active == True,
+        UserModel.id == user_id
+    ))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    filters = [DecisionModel.is_active == True, DecisionModel.user_id == user_id, DecisionModel.status == "ready"]
+    if last_id is not None:
+        filters.append(DecisionModel.id > last_id)
+    request_decision = await db.execute(
+        select(
+            DecisionModel,
+            
+            func.count(DecisionVoteModel.user_id)
+            .filter(DecisionVoteModel.is_like.is_(True))
+            .label("like"),
+
+            func.count(DecisionVoteModel.user_id)
+            .filter(DecisionVoteModel.is_like.is_(False))
+            .label("dislike"),
+        )
+        .outerjoin(DecisionModel.votes)
+        .where(*filters)
+        .group_by(DecisionModel.id)
+        .order_by(DecisionModel.created_at.asc())
+        .limit(30)
+      
+    )
+    rows = request_decision.all()
+    return [
+        DecisionSchema(
+            id=decision.id,
+            title=decision.title,
+            description=decision.description,
+            image_url=decision.image_url,
+            user_id=decision.user_id,
+            created_at=decision.created_at,
+            updated_at=decision.updated_at,
+            status=decision.status,
+            is_active=decision.is_active,
+            like=like,
+            dislike=dislike,
+        )
+        for decision, like, dislike in rows
+    ]
+
+
+@router.get("/unaccepted_decisions0/{user_id}/user", response_model=list[DecisionSchema])
+async def get_user_decisions(
+    user_id : int,
+    last_id : int | None = None,
+    db : AsyncSession = Depends(get_async_db),
+    current_user : UserModel = Depends(jwt_manager.get_current_user)
+)-> list[DecisionSchema]:
+    user = await db.scalar(select(UserModel).where(
+        UserModel.is_active == True,
+        UserModel.id == user_id
+    ))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    filters = [DecisionModel.is_active == True, DecisionModel.user_id == user_id, DecisionModel.status == "in_processing"]
+    if last_id is not None:
+        filters.append(DecisionModel.id > last_id)
+    request_decision = await db.execute(
+        select(
+            DecisionModel,
+            
+            func.count(DecisionVoteModel.user_id)
+            .filter(DecisionVoteModel.is_like.is_(True))
+            .label("like"),
+
+            func.count(DecisionVoteModel.user_id)
+            .filter(DecisionVoteModel.is_like.is_(False))
+            .label("dislike"),
+        )
+        .outerjoin(DecisionModel.votes)
+        .where(*filters)
+        .group_by(DecisionModel.id)
+        .order_by(DecisionModel.created_at.asc())
+        .limit(30)
+      
+    )
+    rows = request_decision.all()
+    return [
+        DecisionSchema(
+            id=decision.id,
+            title=decision.title,
+            description=decision.description,
+            image_url=decision.image_url,
+            user_id=decision.user_id,
+            created_at=decision.created_at,
+            updated_at=decision.updated_at,
+            status=decision.status,
+            is_active=decision.is_active,
+            like=like,
+            dislike=dislike,
+        )
+        for decision, like, dislike in rows
+    ]
+    
+    
+    

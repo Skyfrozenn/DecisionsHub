@@ -36,4 +36,13 @@ class RefreshToken(BaseModel):
     refresh_token : str
 
 
+class UserDetailSchema(UserSchema):
+    decisions_taken : int = Field(0, ge=0 , description="Принятые решения пользователя")
+    unaccepted_decisions : int = Field(0, ge=0 , description="решения пользователя в обработке ")
+
+    model_config = ConfigDict(from_attributes=True)
+     
+
+
+
 

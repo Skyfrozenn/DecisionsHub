@@ -6,13 +6,12 @@ from datetime import datetime
 class UserCreateSchema(BaseModel):
     name : str = Field(..., min_length=4, max_length=20, description="Имя пользователя от 4-20 символов")
     email : EmailStr 
-    password : str = Field(..., description="Пароль не менее 8 символов!")
+    password : str = Field(...,min_length=8,  description="Пароль не менее 8 символов!")
 
     @field_validator("password")
     @classmethod
     def validation_password(cls, value):
-        if len(value) < 8:
-            raise ValueError("Пароль должен быть не менее 8 символов!")
+         
         if not any(item.isupper() for item in value):
             raise ValueError("В пароле должен быть хоть один большой символ!")
         special_characters = "!@#$%^&*()_+/,.?[]"
@@ -44,5 +43,33 @@ class UserDetailSchema(UserSchema):
      
 
 
+class ChangePasswordSchema(BaseModel):
+    old_password : str = Field(...,min_length=8,  description="Старый пароль не менее 8 символов")
+    new_password : str = Field(..., min_length=8, description="Новый пароль не менее 8 символов")
+
+    @field_validator("new_password")
+    @classmethod
+    def validation_new_password(cls, value):
+         
+        if not any(item.isupper() for item in value):
+            raise ValueError("В пароле должен быть хоть один большой символ!")
+        special_characters = "!@#$%^&*()_+/,.?[]"
+        if not any(item  in special_characters for item in value):
+            raise ValueError(f" В пароде должен быть хоть один спецсимвол {special_characters}")
+        return value
 
 
+
+
+class ChangeEmailSchema(BaseModel):
+    password : str = Field(..., min_length=8, description="Текущий пароль")
+    new_email : EmailStr
+
+
+class RoleUpdateSchema(BaseModel):
+    role: str = Field(
+        ...,
+        pattern=r"^(user|admin)$",  
+        description="Доступные роли: user, admin",
+        examples=["user", "admin"]
+    )

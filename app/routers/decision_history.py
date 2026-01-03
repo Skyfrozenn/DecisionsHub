@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, status, HTTPException
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, delete
 from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,7 +94,7 @@ async def get_decision_history(
     return decision_history
 
 
-@router.delete("/{decision_history_id}", status_code=status.HTTP_200_OK)
+@router.delete("/{decision_history_id}")
 async def delete_decision_history(
     decision_history_id: int,
     db: AsyncSession = Depends(get_async_db),
@@ -104,20 +104,30 @@ async def delete_decision_history(
         select(DecisionHistoryModel)
         .where(
             DecisionHistoryModel.id == decision_history_id,
-            DecisionHistoryModel.is_active == True
+            DecisionHistoryModel.is_active.is_(True)
         )
-        .options(joinedload(DecisionHistoryModel.decision))
+        .options(
+            joinedload(DecisionHistoryModel.decision)
+            .joinedload(DecisionModel.user)  
+        )
     )
     
     if decision_history is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="История обновления не найдена или не активна"
-        )
-    user_id = decision_history.decision.user_id
-    if  current_user.role != "admin":
-        if current_user.id != user_id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Доступ запрещен")
+        raise HTTPException(404, "История не найдена")
+    
+    target_user_id = decision_history.decision.user_id
+    target_user_role = decision_history.decision.user.role   
+    
+     
+    if current_user.role == "user":
+        if current_user.id != target_user_id:
+            raise HTTPException(403, "Только свои!")
+    
+    elif current_user.role == "admin":
+        if target_user_role == "admin" or target_user_role == "super_admin":
+            raise HTTPException(403, "Админы удаляют только юзеров!")
+    
+     
     
     await db.execute(
         update(DecisionHistoryModel)
@@ -126,4 +136,44 @@ async def delete_decision_history(
     )
     await db.commit()
     
-    return {"status": "success", "message": "История помечена как неактивная"}
+    return {"status": "success", "message": "История удалена"}
+
+
+@router.delete("/{decision_history_id}/hard")
+async def hard_delete_decision_history(
+    decision_history_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(jwt_manager.get_current_user)
+):
+    decision_history = await db.scalar(
+        select(DecisionHistoryModel)
+        .options(
+            joinedload(DecisionHistoryModel.decision)
+            .joinedload(DecisionModel.user)
+        )
+        .where(
+            DecisionHistoryModel.id == decision_history_id,
+            DecisionHistoryModel.is_active == False
+        )
+    )
+    
+    if not decision_history:
+        raise HTTPException(404, "История не найдена")
+    
+    target_user_role = decision_history.decision.user.role
+    
+    if current_user.role == "user":
+        if current_user.id != decision_history.decision.user_id:
+            raise HTTPException(403, "Только свои!")
+    
+    elif current_user.role == "admin":
+        if target_user_role in ("admin", "super_admin"):
+            raise HTTPException(403, "Админы удаляют только юзеров!")
+    
+    await db.execute(
+        delete(DecisionHistoryModel)
+        .where(DecisionHistoryModel.id == decision_history_id)
+    )
+    await db.commit()
+    
+    return {"status": "deleted", "message": "История удалена"}

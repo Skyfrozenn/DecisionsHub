@@ -2,8 +2,8 @@ import uuid
 
 from fastapi import APIRouter, Depends, status, HTTPException,UploadFile, File, Query
 
-from sqlalchemy import select, or_,  func, update
-from sqlalchemy.orm import selectinload
+from sqlalchemy import select, or_,  func, update, delete
+from sqlalchemy.orm import selectinload, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.decisions import DecisionCreateSchema, DecisionSchema, DecisionSearchSchema, DecisionUpdateSchema
@@ -253,27 +253,49 @@ async def get_decision_info(
     )
 
 
-@router.delete("/{decision_id}", status_code=status.HTTP_200_OK)
-async def in_active_decision(
-    decision_id : int,
-    db : AsyncSession = Depends(get_async_db),
-    current_user : UserModel = Depends(jwt_manager.get_current_user)
+@router.delete("/{decision_id}")
+async def delete_decision(
+    decision_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(jwt_manager.get_current_user)
 ):
     decision = await db.scalar(
         select(DecisionModel)
-        .where(DecisionModel.id == decision_id, DecisionModel.is_active == True)
+        .where(DecisionModel.id == decision_id, DecisionModel.is_active.is_(True))
+        .options(joinedload(DecisionModel.user))
         .options(selectinload(DecisionModel.decision_history))
     )
     if decision is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Запись не найдена или не активна")
-    if current_user.role != "admin":
-        if decision.user_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Удалять чужие данные может только админ")
-        
-    await db.execute(update(DecisionHistoryModel).where(DecisionHistoryModel.decision_id == decision.id).values(is_active = False))
-    await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(is_active = False))
+        raise HTTPException(404, "Решение не найдено")
+    
+    target_user_role = decision.user.role   
+    
+    
+    if current_user.role == "user":
+        if current_user.id != decision.user_id:
+            raise HTTPException(403, "Только свои!")
+    
+    elif current_user.role == "admin":
+        if target_user_role in ["admin", "super_admin"]:
+            raise HTTPException(403, "Админы удаляют только юзеров!")
+    
+    
+    
+    
+    await db.execute(
+        update(DecisionHistoryModel)
+        .where(DecisionHistoryModel.decision_id == decision.id)
+        .values(is_active=False)
+    )
+    await db.execute(
+        update(DecisionModel)
+        .where(DecisionModel.id == decision_id)
+        .values(is_active=False)
+    )
     await db.commit()
-    return {"status": "success", "message": "Decision marked as inactive"}
+    
+    return {"status": "success", "message": "Решение помечено неактивным"}
+
 
 
 
@@ -355,9 +377,9 @@ async def rolback_decision(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Решение не найдено")
     if decision_hisory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="История обновления не найдено")
-    if current_user.role != "admin":
-        if decision.user_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Доступ запрещен! только админ или создатель решения может его изменять")
+    
+    if decision.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Доступ запрещен! только создатель решения может его изменять")
 
 
 
@@ -424,7 +446,7 @@ async def get_user_decisions(
     ]
 
 
-@router.get("/unaccepted_decisions0/{user_id}/user", response_model=list[DecisionSchema])
+@router.get("/unaccepted_decisions/{user_id}/user", response_model=list[DecisionSchema])
 async def get_user_decisions(
     user_id : int,
     last_id : int | None = None,
@@ -478,4 +500,70 @@ async def get_user_decisions(
     ]
     
     
+@router.delete("/{decision_id}/hard")
+async def hard_delete_decision(
+    decision_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(jwt_manager.get_current_user)
+):
+    decision = await db.scalar(
+        select(DecisionModel)
+        .options(joinedload(DecisionModel.user))
+        .where(DecisionModel.id == decision_id, DecisionModel.is_active == False)
+    )
     
+    if not decision:
+        raise HTTPException(404, "Решение не найдено")
+    
+     
+    target_role = decision.user.role
+    
+    if current_user.role == "user":
+        if current_user.id != decision.user_id:
+            raise HTTPException(403, "Только свои!")
+    
+    elif current_user.role == "admin":
+        if target_role in ("admin", "super_admin"):
+            raise HTTPException(403, "Админы удаляют только юзеров!")
+    
+     
+    
+    await db.delete(decision)   
+    await db.commit()
+    
+    return {"status": "deleted", "message": "Решение + истории удалены"}
+
+
+@router.delete("/{decision_id}/history/hard")
+async def hard_delete_decision_history_all(
+    decision_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(jwt_manager.get_current_user)
+):
+    decision = await db.scalar(
+        select(DecisionModel)
+        .options(
+            joinedload(DecisionModel.user),
+            selectinload(DecisionModel.decision_history)
+        )
+        .where(DecisionModel.id == decision_id, DecisionModel.is_active == False)
+    )
+    
+    if not decision:
+        raise HTTPException(404, "Решение не найдено")
+    
+    target_role = decision.user.role
+    
+    if current_user.role == "user":
+        if current_user.id != decision.user_id:
+            raise HTTPException(403, "Только свои!")
+    
+    elif current_user.role == "admin":
+        if target_role in ("admin", "super_admin"):
+            raise HTTPException(403, "Админы удаляют только юзеров!")
+    
+    
+    await db.execute(delete(DecisionHistoryModel).where(DecisionHistoryModel.decision_id == decision_id))
+    await db.commit()
+    
+    return {"status": "deleted" }

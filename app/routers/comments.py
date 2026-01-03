@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 
-from sqlalchemy import select, func, update
-from sqlalchemy.orm import selectinload, outerjoin
+from sqlalchemy import select, func, update, delete
+from sqlalchemy.orm import selectinload, outerjoin, joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import CommentModel, CommentVoteModel, UserModel, DecisionModel
@@ -173,25 +173,72 @@ async def update_comment(
 
     
 @router.delete("/{comment_id}")
-async def in_active_comment(
-    comment_id : int,
-    db : AsyncSession = Depends(get_async_db),
-    current_user : UserModel = Depends(jwt_manager.get_current_user)
+async def delete_comment(
+    comment_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(jwt_manager.get_current_user)
 ):
     comment = await db.scalar(
         select(CommentModel)
-        .where(
-            CommentModel.id == comment_id,
-            CommentModel.status.is_(True)
-        )
+        .where(CommentModel.id == comment_id, CommentModel.status.is_(True))
+        .options(joinedload(CommentModel.user))
     )
     if comment is None:
-        raise HTTPException(status_code=status.HTTP_304_NOT_MODIFIED, detail="Комментарий не найден")
-    if current_user.role != "admin":
-        if comment.user_id != current_user.id:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Доступ запрещен")
-    await db.execute(update(CommentModel).where(CommentModel.id == comment_id).values(status = False))
-    await db.commit()
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+        raise HTTPException(404, "Комментарий не найден")
     
- 
+    target_user_role = comment.user.role
+    
+     
+    if current_user.role == "user":
+        if current_user.id != comment.user_id:
+            raise HTTPException(403, "Только свои!")
+    
+    elif current_user.role == "admin":
+        if target_user_role in ["admin", "super_admin"]:
+            raise HTTPException(403, "Админы удаляют только юзеров!")
+    
+     
+    
+    await db.execute(
+        update(CommentModel)
+        .where(CommentModel.id == comment_id)
+        .values(status=False)
+    )
+    await db.commit()
+    
+    return Response(status_code=204)
+
+    
+@router.delete("/{comment_id}/hard")
+async def hard_delete_comment(
+    comment_id: int,
+    db: AsyncSession = Depends(get_async_db),
+    current_user: UserModel = Depends(jwt_manager.get_current_user)
+):
+    comment = await db.scalar(
+        select(CommentModel)
+        .options(joinedload(CommentModel.user))
+        .where(CommentModel.id == comment_id, CommentModel.status == False)
+    )
+    
+    if not comment:
+        raise HTTPException(404, "Комментарий не найден")
+    
+    target_role = comment.user.role
+    
+    if current_user.role == "user":
+        if current_user.id != comment.user_id:
+            raise HTTPException(403, "Только свои!")
+    
+    elif current_user.role == "admin":
+        if target_role in ("admin", "super_admin"):
+            raise HTTPException(403, "Админы удаляют только юзеров!")
+    
+     
+    await db.execute(
+        delete(CommentModel)
+        .where(CommentModel.id == comment_id)
+        )
+    await db.commit()
+    
+    return {"status": "deleted", "message": "Комментарий удалён"}

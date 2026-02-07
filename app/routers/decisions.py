@@ -14,6 +14,7 @@ from app.utilits import like, dislike, decision_making
 from app.validation.depends_role import get_admin_user
 
 from pathlib import Path
+from datetime import datetime, timedelta, timezone
 
 
 router = APIRouter(
@@ -62,6 +63,9 @@ async def add_decision(
     db.add(new_decision)
     await db.commit()
     await db.refresh(new_decision)
+
+    eta = datetime.now(timezone.utc) + timedelta(days=7)
+    decision_making.apply_async(args=[new_decision.id], eta=eta)
     return new_decision
     
 
@@ -194,8 +198,7 @@ async def update_decision(
     await db.execute(update(DecisionModel).where(DecisionModel.id == decision_id).values(**new_decision.model_dump()))
     await db.commit()
     await db.refresh(decision)
-    if decision.status == "ready":
-        await decision_making(db=db, decision_id=decision.id)
+     
     return decision
     
 
@@ -348,14 +351,7 @@ async def dislike_decision(
 
     
     
-@router.post("/{decision_id}/accept")
-async def accept_decision(
-    decision_id: int,
-    db: AsyncSession = Depends(get_async_db),
-    current_user=Depends(get_admin_user)
-):
-    await decision_making(decision_id, db)
-    return {"status": "success","message" : "the decision has been made"}
+
 
 
 @router.put("/{decision_id}/rolback/{decision_history_id}", response_model=DecisionSchema)
@@ -567,3 +563,119 @@ async def hard_delete_decision_history_all(
     await db.commit()
     
     return {"status": "deleted" }
+
+
+class DecisionRepo:
+    async def search(
+        self,
+        db: AsyncSession,
+        *,
+        filters: list,
+        page: int,
+        page_size: int,
+        rank=None,
+    ) -> DecisionSearchSchema:
+        stmt = (
+            select(
+                DecisionModel,
+
+                func.count(DecisionVoteModel.user_id)
+                .filter(DecisionVoteModel.is_like.is_(True))
+                .label("like"),
+
+                func.count(DecisionVoteModel.user_id)
+                .filter(DecisionVoteModel.is_like.is_(False))
+                .label("dislike"),
+            )
+            .outerjoin(DecisionModel.votes)
+            .where(*filters)
+            .group_by(DecisionModel.id)
+            .limit(page_size)
+            .offset((page - 1) * page_size)
+        )
+
+        if rank is not None:
+            stmt = stmt.order_by(rank.desc())
+        else:
+            stmt = stmt.order_by(DecisionModel.created_at.desc())
+
+        result = await db.execute(stmt)
+        rows = result.all()
+
+        items = [
+            DecisionSchema(
+                id=decision.id,
+                title=decision.title,
+                description=decision.description,
+                image_url=decision.image_url,
+                user_id=decision.user_id,
+                created_at=decision.created_at,
+                updated_at=decision.updated_at,
+                status=decision.status,
+                is_active=decision.is_active,
+                like=like,
+                dislike=dislike,
+            )
+            for decision, like, dislike in rows
+        ]
+
+        return DecisionSearchSchema(
+            page=page,
+            page_size=page_size,
+            total_size=len(items),
+            items=items,
+        )
+
+
+class DecisionService:
+    def __init__(self, repo=None):
+        self.repo = repo or DecisionRepo()
+
+    async def search(
+        self,
+        db: AsyncSession,
+        *,
+        page: int,
+        search: str | None,
+        status_value: str | None,
+    ) -> DecisionSearchSchema:
+
+        PAGE_SIZE = 20
+        filters = [DecisionModel.is_active.is_(True)]
+
+        if status_value:
+            filters.append(DecisionModel.status == status_value)
+
+        rank = None
+
+        if search:
+            search_value = search.strip()
+            if search_value:
+                ts_query_ru = func.websearch_to_tsquery("russian", search_value)
+                ts_query_en = func.websearch_to_tsquery("english", search_value)
+
+                fst_search = or_(
+                    DecisionModel.tsv.op("@@")(ts_query_ru),
+                    DecisionModel.tsv.op("@@")(ts_query_en),
+                )
+
+                trigram_search = or_(
+                    DecisionModel.title.op("%") (search_value),
+                    func.similarity(DecisionModel.title, search_value) > 0.15,
+                )
+
+                filters.append(or_(fst_search, trigram_search))
+
+                rank = func.greatest(
+                    func.ts_rank_cd(DecisionModel.tsv, ts_query_ru),
+                    func.ts_rank_cd(DecisionModel.tsv, ts_query_en),
+                    func.similarity(DecisionModel.title, search_value) * 0.5,
+                )
+
+        return await self.repo.search(
+            db,
+            filters=filters,
+            page=page,
+            page_size=PAGE_SIZE,
+            rank=rank,
+        )

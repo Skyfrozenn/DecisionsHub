@@ -311,3 +311,10 @@ async def hard_delete_own_account(
     await db.commit()
     
     return {"status": "deleted", "message": "Собственный аккаунт удалён"}
+
+
+ 
+
+
+
+
